@@ -2,18 +2,16 @@ import axios from 'axios'                       //网络请求组件
 import Qs from 'qs';                            //数据解析库(使用json亦可，本文未使用qs，如需要，可替换json为qs)
 import { Message } from 'element-ui'            //element组件，本文使用message消息提示
 import router from '../router'                  //路由引入，拦截访问，进行路由跳转
-import * as api from '../api/account_api'       //封装axios请求组件，在特定业务场景使用里面的请求
+import * as api from '../api/api'       //封装axios请求组件，在特定业务场景使用里面的请求
 import store from '../store/index'
 
 //axios网络封装请求开始
 
 var service = axios.create({
-    // process.env.NODE_ENV获取当前业务场景的环境,以使用不同的api地址.可将请求地址换为process.env.NODE_ENV.API_ROOT,API_ROOT为自定义api请求地址
+    // process.env.NODE_ENV获取当前业务场景的环境,以使用不同的api地址.可将请求地址换为process.env.API_ROOT,API_ROOT为自定义api请求地址
     //示例如下：
-    //baseURL: process.env.NODE_ENV === 'production' ? process.env.NODE_ENV.API_ROOT : process.env.NODE_ENV === 'presentation' ? 'http://192.168.3.200:8083' : 'http://192.168.3.46:8888',
-    baseURL: process.env.NODE_ENV === 'production' ? '/api' : process.env.NODE_ENV === 'presentation' ? 'http://192.168.3.200:8083' : 'http://192.168.3.43:8888',
+    baseURL: process.env.NODE_ENV === 'production' ? process.env.API_ROOT : process.env.NODE_ENV === 'presentation' ? process.env.API_ROOT : process.env.API_ROOT,
     timeout: 100000,
-    // isRetryRequest = false
 })
 //获取登录时存储的sessionStorage
 let getJsonStr = window.sessionStorage.getItem('token');
@@ -36,7 +34,6 @@ service.interceptors.request.use(config => {
  });
 
 
-
 //返回状态判断(添加响应拦截器)
 service.interceptors.response.use(response => {
    
@@ -49,7 +46,21 @@ service.interceptors.response.use(response => {
         });
     }
 },error => {
+        //获取错误信息
         const config = error.config
+        //判断错误信息的url是否为刷新接口的url
+        if(config.url === process.env.API_ROOT +"/connect/refresh"){
+            Message({
+                message: '数据刷新失败，请重新登录再进行操作。',
+                type: 'error',
+                duration: 1.5 * 1000
+            })
+            //清除vuex及其sessionStorage等信息
+            store.commit('remove_login_info')
+            //进行路由跳转
+            router.push('/login')
+            return
+        }
         //拦截response 返回状态码，如果为401需要重新进行token刷新，调用请求并传入参数
         if (error.response.status === 401) {
             const retryreq = new Promise((resolve, reject) => {
@@ -71,16 +82,13 @@ service.interceptors.response.use(response => {
                         config.baseURL = '';
                         resolve(axios(config));
                     }
-                    
                 }).catch(function (error) {
-                    console.log(error)
+                    return Promise.reject(error);
                 });
             });
             return retryreq;
         }
         
-        
-       
         //拦截response 返回状态码，如果为400进行错误消息提示
         if (error.response.status === 400) {
             Message({
@@ -88,10 +96,17 @@ service.interceptors.response.use(response => {
                 type: "warning"
             });
         }
+        //拦截response 返回状态码，如果为403进行错误消息提示
         if (error.response.status === 403) {
+            Message({
+                message: '暂无权限，请重新登录再进行操作。',
+                type: 'error',
+                duration: 1.5 * 1000
+            })
+            //清除vuex及其sessionStorage等信息
             store.commit('remove_login_info')
+            //进行路由跳转
             this.$router.push({path:'/login'})
-            // window.location.reload()
         }
         return Promise.reject(error);
     }
